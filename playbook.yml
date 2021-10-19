@@ -1,0 +1,69 @@
+# Ansible playbook AWS - install docker
+---
+ - hosts: all
+   become: yes
+   tasks:
+     - name: Update all packages
+       yum:
+         name: '*'
+         state: latest
+         update_only: yes
+
+     - name: install yum packages 
+       yum:
+         name: "{{ packages }}"
+         state: latest
+         update_cache: yes
+       vars:
+         packages:
+         - git 
+         - make
+         - python-pip
+         - yum-utils
+         - amazon-linux-extras
+
+     - name: Add extras repository
+       shell: yum-config-manager --enable extras
+
+     - name: Install docker-ce 
+       shell: "amazon-linux-extras install docker -y"
+
+     - name: Enable Docker 
+       service:
+         name: docker
+         state: started
+         enabled: yes
+
+     - name: Install docker-compose 
+       pip:
+         name: "{{ packages }}" 
+         extra_args: --upgrade
+         executable: pip3
+       vars:
+         packages:
+         - pip  
+         - docker-compose
+ - name: jenkins setup
+   hosts: JenkinsServerInstance 
+   tasks: 
+     - name: Clone jenkins config 
+       tags:
+         - jenkins
+       shell: |
+             rm -rf jenkins-init
+             git clone https://github.com/eegs333/jenkins-init.git
+     - name: Copy key
+       copy:
+         src: my_key.pem
+         dest: ./jenkins-init/my_key.pem
+         owner: ec2-user
+         group: ec2-user
+         mode: 0600
+     - name: Execute
+       shell: |
+             docker volume create my-jenkins-vol
+             docker build -t jenkins:parrot .
+             docker stop jenkins
+             docker run -d --name jenkins -u root --rm -p 8080:8080 --env JENKINS_ADMIN_ID=admin --env JENKINS_ADMIN_PASSWORD=admin --mount source=my-jenkins-vol,target=/var/jenkins_home -v /var/run/docker.sock:/var/run/docker.sock -v $(which docker):$(which docker)  jenkins:parrot 
+       args: 
+         chdir: ./jenkins-init
